@@ -1,0 +1,92 @@
+package PackageDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class ElecBill {
+	
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+        Job j = new Job(c, "YearWiseMaxConsumption");
+        j.setJarByClass(ElecBill.class);
+        j.setMapperClass(MapForElectricBill.class);
+        j.setReducerClass(ReduceForElectricBill.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(Text.class);  // Change to Text to store both month and consumption
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MapForElectricBill extends Mapper<LongWritable, Text, Text, Text> {
+        public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString();
+            if (line.trim().isEmpty()) {
+                return;  // Skip empty lines
+            }
+
+            // Skip header if present (assuming it's the first line)
+            String[] words = line.split(",");
+            if (words.length < 13) {
+                return;  // Skip lines with incorrect data format
+            }
+
+            String year = words[0].trim();
+            for (int monthIndex = 1; monthIndex <= 12; monthIndex++) {
+                try {
+                    int consumption = Integer.parseInt(words[monthIndex].trim());
+                    if (consumption >= 0) {  // Ignore negative values
+                        String month = getMonthName(monthIndex - 1);
+                        String monthConsumption = month + ":" + consumption;
+                        Text outputKey = new Text(year);
+                        context.write(outputKey, new Text(monthConsumption));
+                    }
+                } catch (NumberFormatException e) {
+                    // Handle invalid consumption data gracefully
+                }
+            }
+        }
+
+        // Convert month index to month name
+        private String getMonthName(int monthIndex) {
+            String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+            return months[monthIndex];
+        }
+    }
+
+    public static class ReduceForElectricBill extends Reducer<Text, Text, Text, IntWritable> {
+        public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            int maxConsumption = 0;
+            String monthWithMaxConsumption = "";
+
+            // Iterate over all values for this year to find the month with max consumption
+            for (Text value : values) {
+                String[] monthData = value.toString().split(":");
+                String month = monthData[0];
+                int consumption = Integer.parseInt(monthData[1]);
+
+                if (consumption > maxConsumption) {
+                    maxConsumption = consumption;
+                    monthWithMaxConsumption = month;
+                }
+            }
+
+            // Output the year, month, and the maximum consumption
+            context.write(new Text(key.toString() + "\t" + monthWithMaxConsumption), new IntWritable(maxConsumption));
+        }
+    }
+}
+

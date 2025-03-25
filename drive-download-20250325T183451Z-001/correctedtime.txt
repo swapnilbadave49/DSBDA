@@ -1,0 +1,136 @@
+package ProgramsDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class logTime {
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+        if (files.length < 2) {
+            System.err.println("Usage: logTime <input path> <output path>");
+            System.exit(1);
+        }
+        
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+        
+        Job j = Job.getInstance(c, "logTime Analysis");
+        j.setJarByClass(logTime.class);
+        j.setMapperClass(MapForWordCount.class);
+        j.setReducerClass(ReduceForWordCount.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(IntWritable.class);
+        
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+        
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MapForWordCount extends Mapper<LongWritable, Text, Text, IntWritable> {
+        public void map(LongWritable key, Text value, Context con) throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            String[] words = line.split(",");
+
+            if (words.length < 8) { // Ensure there are enough columns in the input
+                return;
+            }
+
+            String ip = words[1].trim();
+            String login = words[5].trim();
+            String logout = words[7].trim();
+
+            try {
+                String[] loginParts = login.split(" ");
+                String[] logoutParts = logout.split(" ");
+
+                // Extract the hours and minutes from the time
+                String[] loginTimeParts = loginParts[1].split(":");
+                String[] logoutTimeParts = logoutParts[1].split(":");
+
+                int loginHour = Integer.parseInt(loginTimeParts[0]);
+                int loginMinute = Integer.parseInt(loginTimeParts[1]);
+
+                int logoutHour = Integer.parseInt(logoutTimeParts[0]);
+                int logoutMinute = Integer.parseInt(logoutTimeParts[1]);
+
+                int loginTotalMinutes = loginHour * 60 + loginMinute;
+                int logoutTotalMinutes = logoutHour * 60 + logoutMinute;
+
+                // Handle next-day logout
+                if (logoutTotalMinutes < loginTotalMinutes) {
+                    logoutTotalMinutes += 24 * 60; // Add 24 hours if logout happened the next day
+                }
+
+                int differenceInMinutes = logoutTotalMinutes - loginTotalMinutes;
+                int differenceInSeconds = differenceInMinutes * 60; // Convert minutes to seconds
+
+                con.write(new Text(ip.toUpperCase()), new IntWritable(differenceInSeconds));
+
+            } catch (Exception e) {
+                System.err.println("Error parsing time: " + e.getMessage());
+            }
+        }
+    }
+
+    public static class ReduceForWordCount extends Reducer<Text, IntWritable, Text, IntWritable> {
+        private int globalMax = Integer.MIN_VALUE;
+        private int globalMin = Integer.MAX_VALUE;
+        private Text maxIP = new Text();
+        private Text minIP = new Text();
+
+        public void reduce(Text ip, Iterable<IntWritable> values, Context con) throws IOException, InterruptedException {
+            int maxSession = Integer.MIN_VALUE;
+            int minSession = Integer.MAX_VALUE;
+            int totalTime = 0;
+            int count = 0;
+
+            for (IntWritable value : values) {
+                int sessionTime = value.get();
+                totalTime += sessionTime;
+                count++;
+
+                if (sessionTime > maxSession) {
+                    maxSession = sessionTime;
+                }
+                if (sessionTime < minSession) {
+                    minSession = sessionTime;
+                }
+            }
+
+            int avgSession = count == 0 ? 0 : totalTime / count;
+
+            // Write each IP’s max and min session time
+            con.write(new Text(ip.toString() + " Max Session"), new IntWritable(maxSession));
+            con.write(new Text(ip.toString() + " Min Session"), new IntWritable(minSession));
+            con.write(new Text(ip.toString() + " Avg Session"), new IntWritable(avgSession));
+
+            // Update global max and min
+            if (maxSession > globalMax) {
+                globalMax = maxSession;
+                maxIP.set(ip);
+            }
+            if (minSession < globalMin) {
+                globalMin = minSession;
+                minIP.set(ip);
+            }
+        }
+
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            // Write global max and min session duration
+            context.write(new Text("Max Session IP: " + maxIP.toString()), new IntWritable(globalMax));
+            context.write(new Text("Min Session IP: " + minIP.toString()), new IntWritable(globalMin));
+        }
+    }
+}

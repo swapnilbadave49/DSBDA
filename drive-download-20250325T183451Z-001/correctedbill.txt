@@ -1,0 +1,88 @@
+package ProgramsDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class billConsumption {
+	
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+        if (files.length < 2) {
+            System.err.println("Usage: billConsumption <input path> <output path>");
+            System.exit(-1);
+        }
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+
+        Job j = Job.getInstance(c, "billConsumption");
+        j.setJarByClass(billConsumption.class);
+        j.setMapperClass(MapForWordCount.class);
+        j.setReducerClass(ReduceForWordCount.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(IntWritable.class);
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MapForWordCount extends Mapper<LongWritable, Text, Text, IntWritable> {
+        public void map(LongWritable key, Text value, Context con) throws IOException, InterruptedException {
+            String line = value.toString();
+            String[] words = line.split(",");
+            
+            if (words.length < 2) return; // Ignore invalid rows
+
+            String year = words[0].trim();
+            Text outputKey = new Text(year.toUpperCase());
+
+            for (int j = 1; j < words.length; j++) {
+                try {
+                    int consumption = Integer.parseInt(words[j].trim());
+                    con.write(outputKey, new IntWritable(consumption));
+                } catch (NumberFormatException e) {
+                    System.err.println("Skipping invalid number: " + words[j]);
+                }
+            }
+        }
+    }
+
+    public static class ReduceForWordCount extends Reducer<Text, IntWritable, Text, IntWritable> {
+        private static final String[] months = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        
+        private boolean isFirst = true; // Track first reduce call to print the header
+
+        public void reduce(Text year, Iterable<IntWritable> values, Context con) throws IOException, InterruptedException {
+            int max = 0, maxi = -1, i = 0;
+            
+            for (IntWritable value : values) {
+                if (value.get() > max) {
+                    max = value.get();
+                    maxi = i; // Store the month index
+                }
+                i++;
+            }
+
+            if (maxi >= 0 && maxi < months.length) { // Ensure month index is valid
+                if (isFirst) {
+                    con.write(new Text("Year\tMonth\tMaxConsumption"), null);
+                    isFirst = false;
+                }
+                Text output = new Text(year + "\t" + months[maxi]);
+                con.write(output, new IntWritable(max));
+            }
+        }
+    }
+}

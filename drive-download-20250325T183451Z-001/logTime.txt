@@ -1,0 +1,119 @@
+package ProgramsDemo;
+
+import java.io.IOException;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+
+
+
+public class logTime {
+public static void main(String [] args) throws Exception
+{
+Configuration c=new Configuration();
+String[] files=new GenericOptionsParser(c,args).getRemainingArgs();
+Path input=new Path(files[0]);
+Path output=new Path(files[1]);
+Job j=new Job(c,"wordcount");
+j.setJarByClass(WordCount.class);
+j.setMapperClass(MapForWordCount.class);
+j.setReducerClass(ReduceForWordCount.class);
+j.setOutputKeyClass(Text.class);
+j.setOutputValueClass(IntWritable.class);
+FileInputFormat.addInputPath(j, input);
+FileOutputFormat.setOutputPath(j, output);
+System.exit(j.waitForCompletion(true)?0:1);
+}
+public static class MapForWordCount extends Mapper<LongWritable, Text, Text, IntWritable>{
+	public void map(LongWritable key, Text value, Context con) throws IOException, InterruptedException 
+	{
+		String allLines = value.toString() ;
+		String[] lines = allLines.split("\n") ;
+		for(String line:lines){
+			String[] words = line.split(",") ;
+			String login = words[5] ;
+			String logout = words[7] ;
+			String ip = words[1];
+			
+			String[] loginParts = login.split(" ");
+	        String[] logoutParts = logout.split(" ");
+	        
+	        // Extract the hours and minutes from the time part
+	        String[] loginTimeParts = loginParts[1].split(":");
+	        String[] logoutTimeParts = logoutParts[1].split(":");
+	        
+	        int loginHour = Integer.parseInt(loginTimeParts[0]);
+	        int loginMinute = Integer.parseInt(loginTimeParts[1]);
+	        
+	        int logoutHour = Integer.parseInt(logoutTimeParts[0]);
+	        int logoutMinute = Integer.parseInt(logoutTimeParts[1]);
+	        
+	        int loginTotalMinutes = loginHour * 60 + loginMinute;
+	        int logoutTotalMinutes = logoutHour * 60 + logoutMinute;
+	        
+	        // Calculate the difference in minutes
+	        int differenceInMinutes = logoutTotalMinutes - loginTotalMinutes;
+	        
+	        // Convert minutes to seconds
+	        int differenceInSeconds = differenceInMinutes * 60;
+			
+			
+
+			Text outputKey = new Text(ip.toUpperCase().trim());
+			 IntWritable outputValue = new IntWritable(differenceInSeconds);
+			 con.write(outputKey, outputValue);
+		}
+	}
+}
+
+public static class ReduceForWordCount extends Reducer<Text, IntWritable, Text, IntWritable> {
+    private int gmx = Integer.MIN_VALUE;  // Initialize to a very low value
+    private int gmn = Integer.MAX_VALUE;  // Initialize to a very high value
+    private Text gmxip = new Text();
+    private Text gmnip = new Text();
+
+
+    public void reduce(Text word, Iterable<IntWritable> values, Context con) throws IOException, InterruptedException {
+        int mx = Integer.MIN_VALUE;
+        int mn = Integer.MAX_VALUE;
+        
+        // Calculate max and min for the current IP
+        for (IntWritable value : values) {
+            int loginTime = value.get();
+            if (loginTime > mx) {
+                mx = loginTime;
+            }
+            if (loginTime < mn) {
+                mn = loginTime;
+            }
+        }
+        
+        // Update global max and min across all IPs
+        if (mx > gmx) {
+            gmx = mx;
+            gmxip.set(word);  // Set the IP with the max login time
+        }
+        if (mn < gmn) {
+            gmn = mn;
+            gmnip.set(word);  // Set the IP with the min login time
+        }
+    }	
+
+
+    protected void cleanup(Context context) throws IOException, InterruptedException {
+        // After all reduce tasks have finished, emit the final result
+        context.write(new Text("Max IP: " + gmxip.toString()), new IntWritable(gmx));
+        context.write(new Text("Min IP: " + gmnip.toString()), new IntWritable(gmn));
+    }
+}
+}

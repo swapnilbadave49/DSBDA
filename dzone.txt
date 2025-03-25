@@ -1,0 +1,178 @@
+Steps
+Open Eclipse> File > New > Java Project >( Name it – MRProgramsDemo) > Finish.
+
+Right Click > New > Package ( Name it - PackageDemo) > Finish.
+
+Right Click on Package > New > Class (Name it - WordCount).
+
+Add Following Reference Libraries:
+
+Right Click on Project > Build Path> Add External
+
+/usr/lib/hadoop-0.20/hadoop-core.jar
+
+Usr/lib/hadoop-0.20/lib/Commons-cli-1.2.jar
+
+
+
+5. Type the following code:
+
+1
+package PackageDemo;
+2
+​
+3
+import java.io.IOException;
+4
+import org.apache.hadoop.conf.Configuration;
+5
+import org.apache.hadoop.fs.Path;
+6
+import org.apache.hadoop.io.IntWritable;
+7
+import org.apache.hadoop.io.LongWritable;
+8
+import org.apache.hadoop.io.Text;
+9
+import org.apache.hadoop.mapreduce.Job;
+10
+import org.apache.hadoop.mapreduce.Mapper;
+11
+import org.apache.hadoop.mapreduce.Reducer;
+12
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+13
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+14
+import org.apache.hadoop.util.GenericOptionsParser;
+15
+​
+16
+​
+17
+​
+18
+​
+19
+public class WordCount {
+20
+public static void main(String [] args) throws Exception
+21
+{
+22
+Configuration c=new Configuration();
+23
+String[] files=new GenericOptionsParser(c,args).getRemainingArgs();
+24
+Path input=new Path(files[0]);
+25
+Path output=new Path(files[1]);
+26
+Job j=new Job(c,"wordcount");
+27
+j.setJarByClass(WordCount.class);
+28
+j.setMapperClass(MapForWordCount.class);
+29
+j.setReducerClass(ReduceForWordCount.class);
+30
+j.setOutputKeyClass(Text.class);
+31
+j.setOutputValueClass(IntWritable.class);
+32
+FileInputFormat.addInputPath(j, input);
+33
+FileOutputFormat.setOutputPath(j, output);
+34
+System.exit(j.waitForCompletion(true)?0:1);
+35
+}
+36
+public static class MapForWordCount extends Mapper<LongWritable, Text, Text, IntWritable>{
+37
+public void map(LongWritable key, Text value, Context con) throws IOException, InterruptedException
+38
+{
+39
+String line = value.toString();
+40
+String[] words=line.split(",");
+41
+for(String word: words )
+42
+{
+43
+      Text outputKey = new Text(word.toUpperCase().trim());
+44
+  IntWritable outputValue = new IntWritable(1);
+45
+  con.write(outputKey, outputValue);
+46
+}
+47
+}
+48
+}
+49
+​
+50
+public static class ReduceForWordCount extends Reducer<Text, IntWritable, Text, IntWritable>
+51
+{
+52
+public void reduce(Text word, Iterable<IntWritable> values, Context con) throws IOException, InterruptedException
+53
+{
+54
+int sum = 0;
+55
+   for(IntWritable value : values)
+56
+   {
+57
+   sum += value.get();
+58
+   }
+59
+   con.write(word, new IntWritable(sum));
+60
+}
+61
+​
+62
+}
+63
+​
+64
+}
+
+
+
+6. Make  a jar file
+
+Right Click on Project> Export> Select export destination as Jar File  > next> Finish.
+
+
+7.To move this into Hadoop directly, open the terminal and enter the following commands:
+
+command:-
+[training@localhost ~]$ hadoop fs -put wordcountFile wordCountFile
+
+
+
+8. Run the jar file:(Hadoop jar jarfilename.jar packageName.ClassName PathToInputTextFile PathToOutputDirectry)
+
+command:-
+[training@localhost ~]$ hadoop jar MRProgramsDemo.jar PackageDemo.WordCount wordCountFile MRDir1
+
+
+
+
+9. Open the result:
+
+command:-
+[training@localhost ~]$ hadoop fs -ls MRDir1
+
+Found 3 items
+
+​command;-[training@localhost ~]$ hadoop fs -cat MRDir1/part-r-00000

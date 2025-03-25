@@ -1,0 +1,82 @@
+package ProgramsDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class logTime {
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        String[] files = new GenericOptionsParser(conf, args).getRemainingArgs();
+        if (files.length < 2) { System.err.println("Usage: logTime <input> <output>"); System.exit(1); }
+        
+        Job job = Job.getInstance(conf, "Log Time Analysis");
+        job.setJarByClass(logTime.class);
+        job.setMapperClass(LogMapper.class);
+        job.setReducerClass(LogReducer.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+        
+        FileInputFormat.addInputPath(job, new Path(files[0]));
+        FileOutputFormat.setOutputPath(job, new Path(files[1]));
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class LogMapper extends Mapper<LongWritable, Text, Text, IntWritable> {
+        public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String[] words = value.toString().split(",");
+            if (words.length < 8) return; // Skip invalid lines
+
+            try {
+                String ip = words[1].trim().toUpperCase();
+                String[] loginTime = words[5].split(" ")[1].split(":");
+                String[] logoutTime = words[7].split(" ")[1].split(":");
+
+                int loginMinutes = Integer.parseInt(loginTime[0]) * 60 + Integer.parseInt(loginTime[1]);
+                int logoutMinutes = Integer.parseInt(logoutTime[0]) * 60 + Integer.parseInt(logoutTime[1]);
+                
+                if (logoutMinutes < loginMinutes) logoutMinutes += 24 * 60; // Handle next-day logout
+                
+                context.write(new Text(ip), new IntWritable((logoutMinutes - loginMinutes) * 60)); // Convert to seconds
+            } catch (Exception ignored) {}
+        }
+    }
+
+    public static class LogReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+        private int globalMax = Integer.MIN_VALUE, globalMin = Integer.MAX_VALUE;
+        private Text maxIP = new Text(), minIP = new Text();
+
+        public void reduce(Text ip, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int maxSession = Integer.MIN_VALUE, minSession = Integer.MAX_VALUE, total = 0, count = 0;
+
+            for (IntWritable value : values) {
+                int session = value.get();
+                maxSession = Math.max(maxSession, session);
+                minSession = Math.min(minSession, session);
+                total += session;
+                count++;
+            }
+
+            context.write(new Text(ip + " Max Session"), new IntWritable(maxSession));
+            context.write(new Text(ip + " Min Session"), new IntWritable(minSession));
+            context.write(new Text(ip + " Avg Session"), new IntWritable(total / count));
+
+            if (maxSession > globalMax) { globalMax = maxSession; maxIP.set(ip); }
+            if (minSession < globalMin) { globalMin = minSession; minIP.set(ip); }
+        }
+
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            context.write(new Text("Max Session IP: " + maxIP), new IntWritable(globalMax));
+            context.write(new Text("Min Session IP: " + minIP), new IntWritable(globalMin));
+        }
+    }
+}

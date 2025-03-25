@@ -1,0 +1,55 @@
+1️⃣ Enable File Transfer Between Linux and CentOS (VirtualBox)
+You have three options to transfer the file:
+
+📌 Option 1: Using scp (Easiest & Recommended)
+Find the IP address of CentOS (inside VirtualBox) using:
+
+
+ip a | grep inet
+Look for an IP like 192.168.x.x (assuming you have a NAT or Bridged Adapter enabled in VirtualBox).
+
+Transfer the file from your Linux system to CentOS:
+
+scp ~/Downloads/log_data.csv hadoop@192.168.x.x:/home/hadoop/
+Replace hadoop with your CentOS username.
+
+Replace 192.168.x.x with the actual IP of CentOS.
+
+Verify on CentOS:
+
+
+ls -lh /home/hadoop/
+📌 Option 2: Using Shared Folders (VirtualBox Feature)
+In VirtualBox, go to Settings → Shared Folders.
+
+Click "Add New Folder", select the directory where log_data.csv is stored on your Linux system.
+
+Enable "Auto-mount" and "Make Permanent".
+
+Inside CentOS, access the shared folder (usually at /media/sf_<foldername>).
+
+📌 Option 3: Using a USB Drive (If VirtualBox Supports It)
+Plug in a USB drive.
+
+In VirtualBox → Devices → USB, select the USB.
+
+Copy log_data.csv from Linux to the USB drive.
+
+Mount the USB inside CentOS and copy the file.
+
+2️⃣ Upload the File to HDFS
+Once the file is inside CentOS (/home/hadoop/log_data.csv):
+
+Switch to Hadoop user (if not already in Hadoop user)
+
+
+su - hadoop
+Upload to HDFS:
+
+bash
+
+hdfs dfs -mkdir -p /user/hadoop/input
+hdfs dfs -put /home/hadoop/log_data.csv /user/hadoop/input
+Verify File in HDFS:
+
+hdfs dfs -ls /user/hadoop/input
