@@ -1,0 +1,165 @@
+sql
+
+Collapse
+
+Wrap
+
+Copy
+-- Create Hive Database
+CREATE DATABASE IF NOT EXISTS flight_db;
+USE flight_db;
+
+-- Create Regular Hive Table
+CREATE TABLE flights (
+    flight_id STRING,
+    flight_num STRING,
+    origin STRING,
+    dest STRING,
+    delay INT,
+    flight_date STRING
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ',';
+
+-- Create External Table
+CREATE EXTERNAL TABLE ext_flights (
+    flight_id STRING,
+    flight_num STRING,
+    delay INT
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+LOCATION '/user/hive/flights';
+Now, let's add the HBase part based on your example:
+
+bash
+
+Collapse
+
+Wrap
+
+Copy
+# Step 1: HBase Operations
+# Start HBase shell
+hbase shell
+
+# Create HBase table
+create 'finfo', 'fisch'
+
+# Insert data
+put 'finfo', 'row1', 'fisch:flight_id', '1'
+put 'finfo', 'row1', 'fisch:airline', 'Air India'
+put 'finfo', 'row1', 'fisch:source', 'Mumbai'
+put 'finfo', 'row1', 'fisch:destination', 'Delhi'
+put 'finfo', 'row1', 'fisch:departure_time', '06:30'
+put 'finfo', 'row1', 'fisch:arrival_time', '08:45'
+
+put 'finfo', 'row2', 'fisch:flight_id', '2'
+put 'finfo', 'row2', 'fisch:airline', 'Indigo'
+put 'finfo', 'row2', 'fisch:source', 'Bangalore'
+put 'finfo', 'row2', 'fisch:destination', 'Hyderabad'
+put 'finfo', 'row2', 'fisch:departure_time', '07:00'
+put 'finfo', 'row2', 'fisch:arrival_time', '08:15'
+
+# Verify data
+scan 'finfo'
+
+# Step 2: Export to HDFS
+hbase org.apache.hadoop.hbase.mapreduce.Export finfo /user/hadoop/finfo_export
+Back to HiveQL for integration:
+
+sql
+
+Collapse
+
+Wrap
+
+Copy
+-- Create Hive table over HBase data
+CREATE TABLE flight_info_hive (
+    row_key STRING,
+    flight_id STRING,
+    airline STRING,
+    source STRING,
+    destination STRING,
+    departure_time STRING,
+    arrival_time STRING
+)
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES (
+    "hbase.columns.mapping" = 
+    ":key,fisch:flight_id,fisch:airline,fisch:source,fisch:destination,fisch:departure_time,fisch:arrival_time"
+)
+TBLPROPERTIES ("hbase.table.name" = "finfo");
+
+-- Load data into regular Hive table
+LOAD DATA INPATH '/user/hive/flights.csv' INTO TABLE flights;
+
+-- Insert sample data
+INSERT INTO TABLE flights 
+VALUES ('1', 'AI100', 'Mumbai', 'Delhi', 10, '2008-01-01');
+
+-- Join Hive with HBase table
+CREATE TABLE flight_details AS
+SELECT 
+    f.flight_id,
+    f.flight_num,
+    f.delay,
+    fh.airline
+FROM flights f
+JOIN flight_info_hive fh ON f.flight_id = fh.flight_id;
+
+-- Create Index
+CREATE INDEX flight_idx ON TABLE flights (flight_num);
+
+-- Average Delay in 2008
+SELECT 
+    flight_date,
+    AVG(delay) as avg_delay
+FROM flights
+WHERE flight_date LIKE '2008%'
+GROUP BY flight_date;
+
+-- Modify Table
+ALTER TABLE flights ADD COLUMNS (status STRING);
+
+-- Drop External Table
+DROP TABLE IF EXISTS ext_flights;
+Transfer to MySQL (continuing your example):
+
+bash
+
+Collapse
+
+Wrap
+
+Copy
+# Move data from HDFS to local
+hdfs dfs -get /user/hadoop/finfo_export /home/hadoop/
+
+# Login to MySQL
+mysql -u root -p
+
+# Create MySQL table
+CREATE DATABASE flightDB;
+USE flightDB;
+
+CREATE TABLE finfo (
+    flight_id INT PRIMARY KEY,
+    airline VARCHAR(50),
+    source VARCHAR(50),
+    destination VARCHAR(50),
+    departure_time TIME,
+    arrival_time TIME
+);
+
+# Load data
+mysql -u root -p --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/home/hadoop/finfo_export/part-m-00000'
+INTO TABLE flightDB.finfo
+FIELDS TERMINATED BY '\t'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES;"
+
+# Verify
+SELECT * FROM finfo;

@@ -1,0 +1,130 @@
+1️⃣ Start Required Services
+bash
+Copy
+Edit
+start-dfs.sh
+start-yarn.sh
+start-hbase.sh
+2️⃣ Create an HBase Table
+bash
+Copy
+Edit
+hbase shell
+Then, run:
+
+hbase
+Copy
+Edit
+create 'finfo', 'flight'
+This creates an HBase table finfo with a column family flight.
+
+3️⃣ Insert Data into HBase using put
+hbase
+Copy
+Edit
+put 'finfo', 'F101', 'flight:airline', 'Air India'
+put 'finfo', 'F101', 'flight:origin', 'Delhi'
+put 'finfo', 'F101', 'flight:destination', 'Mumbai'
+put 'finfo', 'F101', 'flight:dep_delay', '15'
+
+put 'finfo', 'F102', 'flight:airline', 'IndiGo'
+put 'finfo', 'F102', 'flight:origin', 'Pune'
+put 'finfo', 'F102', 'flight:destination', 'Bangalore'
+put 'finfo', 'F102', 'flight:dep_delay', '10'
+Now, the data is stored in HBase.
+
+4️⃣ Export Data from HBase to Local File
+Run this command in the HBase shell to scan data and write to a file:
+
+h
+Copy
+Edit
+scan 'finfo'
+Then, export it to a CSV:
+
+bash
+Copy
+Edit
+echo "flight_id,airline,origin,destination,dep_delay" > flight_data.csv
+hbase shell <<< "scan 'finfo'" | awk '{print $1","$3","$5","$7","$9}' >> flight_data.csv
+Now, flight_data.csv contains the data.
+
+5️⃣ Transfer Data to MySQL
+Move the file to MySQL's directory:
+
+bash
+Copy
+Edit
+mv flight_data.csv /var/lib/mysql-files/
+Open MySQL:
+
+bash
+Copy
+Edit
+mysql -u root -p
+Create a database and table:
+
+sql
+Copy
+Edit
+CREATE DATABASE flightDB;
+USE flightDB;
+
+CREATE TABLE flight_info (
+    flight_id VARCHAR(10),
+    airline VARCHAR(50),
+    origin VARCHAR(50),
+    destination VARCHAR(50),
+    dep_delay INT
+);
+Load data into MySQL:
+
+sql
+Copy
+Edit
+LOAD DATA INFILE '/var/lib/mysql-files/flight_data.csv'
+INTO TABLE flight_info
+FIELDS TERMINATED BY ','
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+✅ Done! HBase Data is Now in MySQL Without Using SQL in Hive 🚀
+Now, check the data:
+
+sql
+Copy
+Edit
+SELECT * FROM flight_info;
+
+
+
+
+
+🔹 1. Create an Index on flight_info Table
+Indexing improves query performance. Run this SQL command:
+
+sql
+Copy
+Edit
+CREATE INDEX idx_flight_id ON flight_info(flight_id);
+✅ This will speed up queries on flight_id 🚀
+
+🔹 2. Find the Average Departure Delay Per Day in 2008
+Assuming we have a dep_date column in YYYY-MM-DD format:
+
+sql
+Copy
+Edit
+SELECT dep_date, AVG(dep_delay) AS avg_delay
+FROM flight_info
+WHERE YEAR(dep_date) = 2008
+GROUP BY dep_date
+ORDER BY dep_date;
+🛠️ Explanation:
+Filters only 2008 flights → WHERE YEAR(dep_date) = 2008
+
+Calculates average departure delay per day → AVG(dep_delay)
+
+Groups data by dep_date
+
+Sorts results by date
+

@@ -1,0 +1,98 @@
+✅ Step 1: Start HBase Shell and Create Table
+1️⃣ Start HBase Shell
+bash
+Copy
+Edit
+hbase shell
+2️⃣ Create Table in HBase
+hbase
+Copy
+Edit
+create 'finfo', 'fisch'
+Here, finfo is the table name.
+
+fisch is the column family.
+
+3️⃣ Insert Data Using put
+hbase
+Copy
+Edit
+put 'finfo', 'row1', 'fisch:flight_id', '1'
+put 'finfo', 'row1', 'fisch:airline', 'Air India'
+put 'finfo', 'row1', 'fisch:source', 'Mumbai'
+put 'finfo', 'row1', 'fisch:destination', 'Delhi'
+put 'finfo', 'row1', 'fisch:departure_time', '06:30'
+put 'finfo', 'row1', 'fisch:arrival_time', '08:45'
+
+put 'finfo', 'row2', 'fisch:flight_id', '2'
+put 'finfo', 'row2', 'fisch:airline', 'Indigo'
+put 'finfo', 'row2', 'fisch:source', 'Bangalore'
+put 'finfo', 'row2', 'fisch:destination', 'Hyderabad'
+put 'finfo', 'row2', 'fisch:departure_time', '07:00'
+put 'finfo', 'row2', 'fisch:arrival_time', '08:15'
+4️⃣ Verify Data in HBase
+h
+Copy
+Edit
+scan 'finfo'
+✅ Step 2: Export Data from HBase to HDFS
+We first export HBase data to HDFS using the hbase command.
+
+1️⃣ Use export to Transfer Data to HDFS
+bash
+Copy
+Edit
+hbase org.apache.hadoop.hbase.mapreduce.Export finfo /user/hadoop/finfo_export
+This exports HBase table finfo to HDFS.
+
+✅ Step 3: Transfer Data to MySQL
+Once data is in HDFS, we need to move it to MySQL.
+
+1️⃣ Move Data from HBase to Local Directory
+bash
+Copy
+Edit
+hdfs dfs -get /user/hadoop/finfo_export /home/hadoop/
+2️⃣ Login to MySQL
+bash
+Copy
+Edit
+mysql -u root -p
+3️⃣ Create Table in MySQL
+sql
+Copy
+Edit
+CREATE DATABASE flightDB;
+USE flightDB;
+
+CREATE TABLE finfo (
+    flight_id INT PRIMARY KEY,
+    airline VARCHAR(50),
+    source VARCHAR(50),
+    destination VARCHAR(50),
+    departure_time TIME,
+    arrival_time TIME
+);
+4️⃣ Load Data into MySQL
+bash
+Copy
+Edit
+mysql -u root -p --local-infile=1 -e "
+LOAD DATA LOCAL INFILE '/home/hadoop/finfo_export/part-m-00000'
+INTO TABLE flightDB.finfo
+FIELDS TERMINATED BY '\t'
+LINES TERMINATED BY '\n'
+IGNORE 1 LINES;"
+✅ Step 4: Verify Data in MySQL
+sql
+Copy
+Edit
+SELECT * FROM finfo;
+🎯 Final Flow
+1️⃣ Create HBase table and insert data using put.
+2️⃣ Export HBase data to HDFS.
+3️⃣ Move data from HDFS to local directory.
+4️⃣ Import into MySQL.
+5️⃣ Verify in MySQL.
+
+🚀 Now, your HBase data is successfully transferred to MySQL! 🎉
