@@ -1,0 +1,143 @@
+package ProgramsDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class logTime {
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+
+        if (files.length < 2) {
+            System.err.println("Usage: logTime <input path> <output path>");
+            System.exit(-1);
+        }
+
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+
+        Job j = Job.getInstance(c, "LogTime Analysis");
+        j.setJarByClass(logTime.class);
+        j.setMapperClass(MapForLogTime.class);
+        j.setReducerClass(ReduceForLogTime.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(IntWritable.class);
+
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MapForLogTime extends Mapper<LongWritable, Text, Text, IntWritable> {
+        public void map(LongWritable key, Text value, Context con) throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            String[] words = line.split(",");
+
+            // Ensure that the log line has at least 8 columns
+            if (words.length < 8) {
+                return;  // Skip invalid lines
+            }
+
+            String ip = words[1].trim();
+            String login = words[5].trim();
+            String logout = words[7].trim();
+
+            try {
+                String loginTimeStr = login.split(" ")[1];  // Extract time part
+                String logoutTimeStr = logout.split(" ")[1];
+
+                // Split into HH:MM:SS
+                String[] loginParts = loginTimeStr.split(":");
+                String[] logoutParts = logoutTimeStr.split(":");
+
+                int loginHour = Integer.parseInt(loginParts[0]);
+                int loginMinute = Integer.parseInt(loginParts[1]);
+
+                int logoutHour = Integer.parseInt(logoutParts[0]);
+                int logoutMinute = Integer.parseInt(logoutParts[1]);
+
+                int loginTotalMinutes = loginHour * 60 + loginMinute;
+                int logoutTotalMinutes = logoutHour * 60 + logoutMinute;
+
+                // Handle logout occurring after midnight
+                if (logoutTotalMinutes < loginTotalMinutes) {
+                    logoutTotalMinutes += 24 * 60;
+                }
+
+                int sessionDurationSeconds = (logoutTotalMinutes - loginTotalMinutes) * 60;
+
+                // Emit (IP Address, Session Duration in Seconds)
+                con.write(new Text(ip.toUpperCase()), new IntWritable(sessionDurationSeconds));
+
+            } catch (Exception e) {
+                System.err.println("Error parsing time for IP: " + ip + " - " + e.getMessage());
+            }
+        }
+    }
+
+    public static class ReduceForLogTime extends Reducer<Text, IntWritable, Text, IntWritable> {
+        private int maxSession = Integer.MIN_VALUE;
+        private int minSession = Integer.MAX_VALUE;
+        private Text maxSessionIp = new Text();
+        private Text minSessionIp = new Text();
+
+        public void reduce(Text ip, Iterable<IntWritable> values, Context con) throws IOException, InterruptedException {
+            int maxTime = Integer.MIN_VALUE;
+            int minTime = Integer.MAX_VALUE;
+
+            for (IntWritable value : values) {
+                int sessionTime = value.get();
+                if (sessionTime > maxTime) {
+                    maxTime = sessionTime;
+                }
+                if (sessionTime < minTime) {
+                    minTime = sessionTime;
+                }
+            }
+
+            // Write per-IP session info
+            con.write(ip, new IntWritable(maxTime));
+
+            // Track global max/min
+            if (maxTime > maxSession) {
+                maxSession = maxTime;
+                maxSessionIp.set(ip);
+            }
+            if (minTime < minSession) {
+                minSession = minTime;
+                minSessionIp.set(ip);
+            }
+        }
+
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            context.write(new Text("Max Session IP: " + maxSessionIp.toString()), new IntWritable(maxSession));
+            context.write(new Text("Min Session IP: " + minSessionIp.toString()), new IntWritable(minSession));
+        }
+    }
+}
+
+
+
+how to run:-
+# 1. Upload the input file to HDFS (only if it's not already there)
+hadoop fs -put LogFile.csv logFile
+
+# 2. Remove old output directory if it exists
+hadoop fs -rm -r logTimeOutput
+
+# 3. Run the Hadoop job
+hadoop jar logTime.jar ProgramsDemo.logTime logFile logTimeOutput
+
+# 4. Check the output
+hadoop fs -cat logTimeOutput/part-r-00000

@@ -1,0 +1,80 @@
+package ProgramsDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class IPAddressCount {
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+
+        if (files.length < 2) {
+            System.err.println("Usage: IPAddressCount <input path> <output path>");
+            System.exit(-1);
+        }
+
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+
+        Job j = Job.getInstance(c, "IP Address Count");
+        j.setJarByClass(IPAddressCount.class);
+        j.setMapperClass(MapForIPAddressCount.class);
+        j.setReducerClass(ReduceForIPAddressCount.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(IntWritable.class);
+
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MapForIPAddressCount extends Mapper<LongWritable, Text, Text, IntWritable> {
+        public void map(LongWritable key, Text value, Context con) throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            String[] words = line.split(",");
+
+            if (words.length < 2) {
+                return; // Skip invalid lines
+            }
+
+            String ip = words[1].trim();
+            con.write(new Text(ip.toUpperCase()), new IntWritable(1));
+        }
+    }
+
+    public static class ReduceForIPAddressCount extends Reducer<Text, IntWritable, Text, IntWritable> {
+        public void reduce(Text ip, Iterable<IntWritable> values, Context con) throws IOException, InterruptedException {
+            int count = 0;
+            for (IntWritable value : values) {
+                count += value.get();
+            }
+            con.write(ip, new IntWritable(count));
+        }
+    }
+}
+
+
+how to run:-
+
+# 1. Upload the input file to HDFS (only if it's not already there)
+hadoop fs -put LogFile.csv logFile
+
+# 2. Remove old output directory if it exists
+hadoop fs -rm -r ipCountOutput
+
+# 3. Run the Hadoop job
+hadoop jar IPAddressCount.jar ProgramsDemo.IPAddressCount logFile ipCountOutput
+
+# 4. Check the output
+hadoop fs -cat ipCountOutput/part-r-00000

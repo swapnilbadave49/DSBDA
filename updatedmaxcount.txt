@@ -1,0 +1,190 @@
+package PackageDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class MaxValueByYear {
+
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+
+        Job j = Job.getInstance(c, "maxValueByYear");
+        j.setJarByClass(MaxValueByYear.class);
+        j.setMapperClass(MaxValueMapper.class);
+        j.setReducerClass(MaxValueReducer.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(Text.class);
+
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MaxValueMapper extends Mapper<Object, Text, Text, Text> {
+        private static final String[] months = {
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        };
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            String[] parts = line.split("\\s+"); // Split by whitespace
+
+            if (parts.length < 13) return; // Ensure the line has the correct format (Year + 12 values)
+
+            String year = parts[0]; // Extract the year
+            int maxValue = Integer.MIN_VALUE;
+            String maxMonth = "";
+
+            for (int i = 1; i <= 12; i++) { // Iterate through the 12 months
+                try {
+                    int monthValue = Integer.parseInt(parts[i]);
+                    if (monthValue > maxValue) {
+                        maxValue = monthValue;
+                        maxMonth = months[i - 1]; // Store the month name
+                    }
+                } catch (NumberFormatException e) {
+                    // Ignore invalid numbers (e.g., "00" or missing values)
+                }
+            }
+
+            if (!maxMonth.isEmpty()) {
+                context.write(new Text(year), new Text(maxMonth + " " + maxValue));
+            }
+        }
+    }
+
+    public static class MaxValueReducer extends Reducer<Text, Text, Text, Text> {
+        public void reduce(Text year, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            for (Text value : values) {
+                context.write(year, value); // Directly write the output as Year -> Month MaxValue
+            }
+        }
+    }
+}
+
+
+text file:-
+
+1979 23 23 2 43 24 25 26 26 26 26 25 26 25
+1980 26 27 28 28 28 30 31 31 31 30 30 30 29
+1981 31 32 32 32 33 34 35 36 36 34 34 34 34
+1984 39 38 39 39 39 41 42 43 40 39 38 38 40
+1985 38 39 39 39 39 41 41 41 00 40 39 39 45
+
+
+  String[] parts = line.split(",");
+ String[] parts = line.split(",\\s*");
+
+
+
+
+package PackageDemo;
+
+import java.io.IOException;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class MaxValueByYear {
+
+    public static void main(String[] args) throws Exception {
+        Configuration c = new Configuration();
+        String[] files = new GenericOptionsParser(c, args).getRemainingArgs();
+
+        if (files.length < 2) {
+            System.err.println("Usage: MaxValueByYear <input file> <output dir>");
+            System.exit(1);
+        }
+
+        Path input = new Path(files[0]);
+        Path output = new Path(files[1]);
+
+        Job j = Job.getInstance(c, "maxValueByYear");
+        j.setJarByClass(MaxValueByYear.class);
+        j.setMapperClass(MaxValueMapper.class);
+        j.setReducerClass(MaxValueReducer.class);
+        j.setOutputKeyClass(Text.class);
+        j.setOutputValueClass(Text.class);
+
+        FileInputFormat.addInputPath(j, input);
+        FileOutputFormat.setOutputPath(j, output);
+
+        System.exit(j.waitForCompletion(true) ? 0 : 1);
+    }
+
+    public static class MaxValueMapper extends Mapper<Object, Text, Text, Text> {
+        private static final String[] months = {
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        };
+
+        public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString().trim();
+            String[] parts = line.split(",\\s*"); // Split by comma and remove extra spaces
+
+            if (parts.length < 13) return; // Ensure valid format (Year + 12 values)
+
+            String year = parts[0].trim(); // Extract year
+            int maxValue = Integer.MIN_VALUE;
+            String maxMonth = "";
+
+            for (int i = 1; i <= 12; i++) { // Iterate through 12 months
+                try {
+                    String cleanValue = parts[i].trim();
+                    if (cleanValue.equals("00") || cleanValue.isEmpty()) continue; // Skip missing values
+
+                    int monthValue = Integer.parseInt(cleanValue);
+                    if (monthValue > maxValue) {
+                        maxValue = monthValue;
+                        maxMonth = months[i - 1]; // Get corresponding month name
+                    }
+                } catch (NumberFormatException e) {
+                    // Ignore invalid numbers
+                }
+            }
+
+            if (!maxMonth.isEmpty()) {
+                context.write(new Text(year), new Text(maxMonth + " " + maxValue));
+            }
+        }
+    }
+
+    public static class MaxValueReducer extends Reducer<Text, Text, Text, Text> {
+        public void reduce(Text year, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            for (Text value : values) {
+                context.write(year, value); // Directly write the output as Year -> Month MaxValue
+            }
+        }
+    }
+}
+
+
+
+how to run:-
+
+1.hadoop fs -put input.csv maxValueInput
+2.hadoop jar MaxValueByYear.jar PackageDemo.MaxValueByYear maxValueInput maxValueOutput
+3.hadoop fs -ls maxValueOutput
+4.hadoop fs -cat maxValueOutput/part-r-00000
+5.to remove directory(optional)
+  hadoop fs -rm -r maxValueOutput
